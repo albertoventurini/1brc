@@ -169,21 +169,23 @@ public class CalculateAverage_albertoventurini {
             }
 
             if (parsingDecimal) {
-                // todo
+                decimalDigits++;
             }
             else {
                 reading = reading * 10 + (c - '0');
             }
         }
 
-        if (cr.hasNext()) {
-            cr.getNext();
-        }
+        reading = reading / (double) decimalDigits;
 
         node.min = Math.min(node.min, reading);
         node.max = Math.max(node.max, reading);
         node.sum += reading;
         node.count++;
+
+        if (cr.hasNext()) {
+            cr.getNext();
+        }
     }
 
     private static void printResults() {
