@@ -21,7 +21,7 @@ import java.io.RandomAccessFile;
 public class CalculateAverage_albertoventurini {
 
     private static class TrieNode {
-        TrieNode[] children = new TrieNode[256];
+        final TrieNode[] children = new TrieNode[256];
         private long min = Long.MAX_VALUE;
         private long max = Long.MIN_VALUE;
         private long sum;
@@ -34,20 +34,24 @@ public class CalculateAverage_albertoventurini {
     private static void processRow(final ChunkReader cr) {
         TrieNode node = root;
 
-        while (cr.peekNext() != ';') {
-            final int b = cr.getNext() & 0xFF;
+        int b = cr.getNext() & 0xFF;
+        while (b != ';') {
             if (node.children[b] == null) {
                 node.children[b] = new TrieNode();
             }
             node = node.children[b];
+            b = cr.getNext() & 0xFF;
         }
 
         cr.advance();
 
         long reading = 0;
         boolean negative = false;
-        while (cr.hasNext() && cr.peekNext() != '\n') {
+        while (cr.hasNext()) {
             byte c = cr.getNext();
+            if (c == '\n') {
+                break;
+            }
             if (c == '-') {
                 negative = true;
                 continue;
@@ -64,8 +68,6 @@ public class CalculateAverage_albertoventurini {
         node.max = Math.max(node.max, signedReading);
         node.sum += signedReading;
         node.count++;
-
-        cr.advance();
     }
 
     private static void printResults() {
