@@ -157,30 +157,32 @@ public class CalculateAverage_albertoventurini {
         }
 
         cr.getNext();
-        double reading = 0.0;
-        boolean parsingDecimal = false;
-        int decimalDigits = 0;
+        long reading = 0;
+        int sign = 1;
         while (cr.hasNext() && cr.peekNext() != '\n') {
             byte c = cr.getNext();
-            if (c == '.') {
-                parsingDecimal = true;
-                cr.getNext();
+            if (c == '-') {
+                sign = -1;
                 continue;
             }
-
-            if (parsingDecimal) {
-                decimalDigits++;
+            if (c == '.') {
+                continue;
             }
-            else {
-                reading = reading * 10 + (c - '0');
-            }
+            reading = reading * 10 + (c - '0');
         }
 
-        reading = reading / (double) decimalDigits;
+        long signedReading = sign == 1 ? reading : -reading;
+        double readingDouble = (double) signedReading / 10.0;
+//
+//        if (decimalDigits != 0) {
+//            readingDouble = (double) signedReading / (double) decimalDigits;
+//        } else {
+//            readingDouble = signedReading;
+//        }
 
-        node.min = Math.min(node.min, reading);
-        node.max = Math.max(node.max, reading);
-        node.sum += reading;
+        node.min = Math.min(node.min, readingDouble);
+        node.max = Math.max(node.max, readingDouble);
+        node.sum += readingDouble;
         node.count++;
 
         if (cr.hasNext()) {
@@ -194,10 +196,14 @@ public class CalculateAverage_albertoventurini {
         printResultsRec(root, bytes, 0);
     }
 
+    private static double round(double value) {
+        return Math.round(value * 10.0) / 10.0;
+    }
+
     private static void printResultsRec(final TrieNode node, final byte[] bytes, final int index) {
         if (node.count > 0) {
             final String location = new String(bytes, 0, index);
-            System.out.println(location + "=" + round(node.min) + "/" + round(0) + "/" + round(node.max));
+            System.out.println(location + "=" + round(node.min) + "/" + (Math.round(node.sum * 10.0) / 10.0) / node.count + "/" + round(node.max));
         }
 
         for (int i = 0; i < 256; i++) {
