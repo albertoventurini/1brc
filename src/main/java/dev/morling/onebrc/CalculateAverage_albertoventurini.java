@@ -15,135 +15,21 @@
  */
 package dev.morling.onebrc;
 
-import java.io.*;
-import java.nio.ByteBuffer;
-import java.nio.CharBuffer;
-import java.nio.MappedByteBuffer;
-import java.nio.channels.FileChannel;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Queue;
-import java.util.concurrent.*;
-
-import static java.lang.Math.round;
+import java.io.IOException;
+import java.io.RandomAccessFile;
 
 public class CalculateAverage_albertoventurini {
 
     private static class TrieNode {
         TrieNode[] children = new TrieNode[256];
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
+        private long min = Long.MAX_VALUE;
+        private long max = Long.MIN_VALUE;
+        private long sum;
         private long count;
     }
 
     private static final TrieNode root = new TrieNode();
 
-    private static void processRow(final String row) {
-        final String[] tokens = row.split(";");
-        byte[] bytes = tokens[0].getBytes();
-
-        TrieNode node = root;
-        for (int i = 0; i < bytes.length; i++) {
-            final int b = bytes[i] & 0xFF;
-            if (node.children[b] == null) {
-                node.children[b] = new TrieNode();
-            }
-            node = node.children[b];
-        }
-
-        double value = Double.parseDouble(tokens[1]);
-
-        node.min = Math.min(node.min, value);
-        node.max = Math.max(node.max, value);
-        node.sum += value;
-        node.count++;
-    }
-
-    private static void processRow2(final String row) {
-        byte[] bytes = row.getBytes();
-
-        TrieNode node = root;
-        int i = 0;
-        while (bytes[i] != ';') {
-            final int b = bytes[i] & 0xFF;
-            if (node.children[b] == null) {
-                node.children[b] = new TrieNode();
-            }
-            node = node.children[b];
-            i++;
-        }
-
-        i++;
-
-        double reading = 0.0;
-        boolean parsingDecimal = false;
-        int decimalDigits = 0;
-        while (i < row.length()) {
-            if (bytes[i] == '.') {
-                parsingDecimal = true;
-                i++;
-                continue;
-            }
-
-            if (parsingDecimal) {
-                decimalDigits++;
-            }
-
-            reading = reading * 10 + (bytes[i] - '0');
-
-            i++;
-        }
-
-        reading = reading / (double) decimalDigits;
-
-        node.min = Math.min(node.min, reading);
-        node.max = Math.max(node.max, reading);
-        node.sum += reading;
-        node.count++;
-    }
-
-    private static void processRowByteArray(final byte[] bytes, final int length) {
-
-        TrieNode node = root;
-        int i = 0;
-        while (bytes[i] != ';') {
-            final int b = bytes[i] & 0xFF;
-            if (node.children[b] == null) {
-                node.children[b] = new TrieNode();
-            }
-            node = node.children[b];
-            i++;
-        }
-
-        i++;
-
-        double reading = 0.0;
-        boolean parsingDecimal = false;
-        int decimalDigits = 0;
-        while (i < length) {
-            if (bytes[i] == '.') {
-                parsingDecimal = true;
-                i++;
-                continue;
-            }
-
-            if (parsingDecimal) {
-                decimalDigits++;
-            }
-
-            reading = reading * 10 + (bytes[i] - '0');
-
-            i++;
-        }
-
-        reading = reading / (double) decimalDigits;
-
-        node.min = Math.min(node.min, reading);
-        node.max = Math.max(node.max, reading);
-        node.sum += reading;
-        node.count++;
-    }
 
     private static void processRow(final ChunkReader cr) {
         TrieNode node = root;
@@ -158,11 +44,11 @@ public class CalculateAverage_albertoventurini {
 
         cr.getNext();
         long reading = 0;
-        int sign = 1;
+        boolean negative = false;
         while (cr.hasNext() && cr.peekNext() != '\n') {
             byte c = cr.getNext();
             if (c == '-') {
-                sign = -1;
+                negative = true;
                 continue;
             }
             if (c == '.') {
@@ -171,18 +57,11 @@ public class CalculateAverage_albertoventurini {
             reading = reading * 10 + (c - '0');
         }
 
-        long signedReading = sign == 1 ? reading : -reading;
-        double readingDouble = (double) signedReading / 10.0;
-//
-//        if (decimalDigits != 0) {
-//            readingDouble = (double) signedReading / (double) decimalDigits;
-//        } else {
-//            readingDouble = signedReading;
-//        }
+        final long signedReading = negative ? -reading : reading;
 
-        node.min = Math.min(node.min, readingDouble);
-        node.max = Math.max(node.max, readingDouble);
-        node.sum += readingDouble;
+        node.min = Math.min(node.min, signedReading);
+        node.max = Math.max(node.max, signedReading);
+        node.sum += signedReading;
         node.count++;
 
         if (cr.hasNext()) {
@@ -196,14 +75,14 @@ public class CalculateAverage_albertoventurini {
         printResultsRec(root, bytes, 0);
     }
 
-    private static double round(double value) {
-        return Math.round(value * 10.0) / 10.0;
+    private static double round(long value) {
+        return value / 10.0;
     }
 
     private static void printResultsRec(final TrieNode node, final byte[] bytes, final int index) {
         if (node.count > 0) {
             final String location = new String(bytes, 0, index);
-            System.out.println(location + "=" + round(node.min) + "/" + (Math.round(node.sum * 10.0) / 10.0) / node.count + "/" + round(node.max));
+            System.out.println(location + "=" + round(node.min) + "/" + node.sum / node.count + "/" + round(node.max));
         }
 
         for (int i = 0; i < 256; i++) {
@@ -268,89 +147,6 @@ public class CalculateAverage_albertoventurini {
         }
     }
 
-    private static void processWithMultiThread() {
-        int nThreads = 256;
-        BufferedReader reader;
-
-        BlockingQueue[] queues = new LinkedBlockingQueue[nThreads];
-
-        final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
-
-        for (int i = 0; i < nThreads; i++) {
-            final int index = i;
-            queues[i] = new LinkedBlockingQueue<String>();
-
-            executorService.submit(() -> {
-                while (true) {
-                    final String line;
-                    try {
-                        line = (String) queues[index].take();
-                    } catch (InterruptedException e) {
-                        throw new RuntimeException(e);
-                    }
-
-                    if (line.equals("===")) {
-                        break;
-                    } else {
-                        processRow2(line);
-                    }
-                }
-            });
-        }
-
-        int j = 0;
-
-        try {
-            reader = new BufferedReader(new FileReader(FILE));
-            String line = reader.readLine();
-
-            while (line != null) {
-                int queueIndex = line.charAt(0) & 0xFF;
-
-                if ((j % 1_000_000) == 0) {
-                    System.out.println(j);
-                }
-                j++;
-
-                queues[queueIndex].put(line);
-                line = reader.readLine();
-            }
-
-            reader.close();
-
-            for (int i = 0; i < nThreads; i++)
-                queues[i].put("===");
-
-        }  catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        System.out.println("Finished");
-
-        executorService.shutdown();
-
-        System.out.println("Shut down");
-    }
-
-    private static void processWithBufferedReader() {
-        BufferedReader reader;
-
-        try {
-            reader = new BufferedReader(new FileReader(FILE));
-            String line = reader.readLine();
-
-            while (line != null) {
-                processRow2(line);
-                line = reader.readLine();
-            }
-
-            reader.close();
-        }
-        catch (IOException e) {
-            e.printStackTrace();
-        }
-    }
-
     private static void processWithChunkReader() throws Exception {
         var randomAccessFile = new RandomAccessFile(FILE, "r");
 
@@ -367,43 +163,6 @@ public class CalculateAverage_albertoventurini {
         }
     }
 
-    private static void processWithMemoryMapped() throws Exception {
-        FileChannel channel = FileChannel.open(Path.of(FILE));
-
-        long chunkLength = Integer.MAX_VALUE;
-        long fileSize = channel.size();
-        long position = 0;
-
-        long index = 0;
-
-        byte[] bytes = new byte[200];
-        int i = 0;
-
-        MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, chunkLength);
-
-        while (true) {
-            if (index >= chunkLength) {
-
-                if ((position + chunkLength) > fileSize) {
-                    break;
-                }
-
-                buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, chunkLength);
-                position += chunkLength;
-                index = 0;
-            }
-
-            byte b = buffer.get();
-            index++;
-
-            if (b != '\n') {
-                bytes[i++] = b;
-            } else {
-                processRowByteArray(bytes, i);
-                i = 0;
-            }
-        }
-    }
 
     public static void main(String[] args) throws Exception {
 
