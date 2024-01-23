@@ -30,7 +30,6 @@ public class CalculateAverage_albertoventurini {
 
     private static final TrieNode root = new TrieNode();
 
-
     private static void processRow(final ChunkReader cr) {
         TrieNode node = root;
 
@@ -42,8 +41,6 @@ public class CalculateAverage_albertoventurini {
             node = node.children[b];
             b = cr.getNext() & 0xFF;
         }
-
-        cr.advance();
 
         long reading = 0;
         boolean negative = false;
@@ -70,26 +67,38 @@ public class CalculateAverage_albertoventurini {
         node.count++;
     }
 
-    private static void printResults() {
+    static class ResultPrinter {
         byte[] bytes = new byte[100];
 
-        printResultsRec(root, bytes, 0);
-    }
+        boolean firstOutput = true;
 
-    private static double round(long value) {
-        return value / 10.0;
-    }
-
-    private static void printResultsRec(final TrieNode node, final byte[] bytes, final int index) {
-        if (node.count > 0) {
-            final String location = new String(bytes, 0, index);
-            System.out.println(location + "=" + round(node.min) + "/" + node.sum / node.count + "/" + round(node.max));
+        void printResults() {
+            System.out.print("{");
+            printResultsRec(root, bytes, 0);
+            System.out.println("}");
         }
 
-        for (int i = 0; i < 256; i++) {
-            if (node.children[i] != null) {
-                bytes[index] = (byte) i;
-                printResultsRec(node.children[i], bytes, index + 1);
+        private double round(long value) {
+            return Math.round(value) / 10.0;
+        }
+
+        private void printResultsRec(final TrieNode node, final byte[] bytes, final int index) {
+            if (node.count > 0) {
+                final String location = new String(bytes, 0, index);
+                if (firstOutput) {
+                    firstOutput = false;
+                } else {
+                    System.out.print(", ");
+                }
+                double mean = Math.round((double) node.sum / (double) node.count) / 10.0;
+                System.out.print(location + "=" + round(node.min) + "/" + mean + "/" + round(node.max));
+            }
+
+            for (int i = 0; i < 256; i++) {
+                if (node.children[i] != null) {
+                    bytes[index] = (byte) i;
+                    printResultsRec(node.children[i], bytes, index + 1);
+                }
             }
         }
     }
@@ -106,10 +115,9 @@ public class CalculateAverage_albertoventurini {
 
         int cursor = 0;
         long off = 0;
-
+        long previousOff = 0;
 
         long fileLength;
-
 
         public ChunkReader(RandomAccessFile file) throws IOException {
             this.file = file;
@@ -118,7 +126,7 @@ public class CalculateAverage_albertoventurini {
         }
 
         boolean hasNext() {
-            return (off + cursor) < fileLength;
+            return (previousOff + cursor) < fileLength;
         }
 
         byte getNext() {
@@ -141,6 +149,7 @@ public class CalculateAverage_albertoventurini {
 
         private void readNextChunk() {
             try {
+                previousOff = off;
                 file.seek(off);
                 readChars = file.read(chunk);
                 off += readChars;
@@ -171,12 +180,14 @@ public class CalculateAverage_albertoventurini {
 
     public static void main(String[] args) throws Exception {
 
-        System.out.println("Processing...");
+//        System.out.println("Processing...");
 
         processWithChunkReader();
 
-        System.out.println("Printing...");
-        printResults();
+  //      System.out.println("Printing...");
+
+        new ResultPrinter().printResults();
+        //printResults();
 
     }
 }
