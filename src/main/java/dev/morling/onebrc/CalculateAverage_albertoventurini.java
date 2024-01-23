@@ -42,7 +42,8 @@ public class CalculateAverage_albertoventurini {
             node = node.children[b];
         }
 
-        cr.getNext();
+        cr.advance();
+
         long reading = 0;
         boolean negative = false;
         while (cr.hasNext() && cr.peekNext() != '\n') {
@@ -64,9 +65,7 @@ public class CalculateAverage_albertoventurini {
         node.sum += signedReading;
         node.count++;
 
-        if (cr.hasNext()) {
-            cr.getNext();
-        }
+        cr.advance();
     }
 
     private static void printResults() {
@@ -125,6 +124,10 @@ public class CalculateAverage_albertoventurini {
                 readNextChunk();
             }
             return chunk[cursor++];
+        }
+
+        void advance() {
+            cursor++;
         }
 
         byte peekNext() {
