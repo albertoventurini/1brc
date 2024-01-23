@@ -21,6 +21,8 @@ import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Queue;
+import java.util.concurrent.*;
 
 import static java.lang.Math.round;
 
@@ -246,6 +248,70 @@ public class CalculateAverage_albertoventurini {
         }
     }
 
+    private static void processWithMultiThread() {
+        int nThreads = 256;
+        BufferedReader reader;
+
+        BlockingQueue[] queues = new LinkedBlockingQueue[nThreads];
+
+        final ExecutorService executorService = Executors.newVirtualThreadPerTaskExecutor();
+
+        for (int i = 0; i < nThreads; i++) {
+            final int index = i;
+            queues[i] = new LinkedBlockingQueue<String>();
+
+            executorService.submit(() -> {
+                while (true) {
+                    final String line;
+                    try {
+                        line = (String) queues[index].take();
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+
+                    if (line.equals("===")) {
+                        break;
+                    } else {
+                        processRow2(line);
+                    }
+                }
+            });
+        }
+
+        int j = 0;
+
+        try {
+            reader = new BufferedReader(new FileReader(FILE));
+            String line = reader.readLine();
+
+            while (line != null) {
+                int queueIndex = line.charAt(0) & 0xFF;
+
+                if ((j % 1_000_000) == 0) {
+                    System.out.println(j);
+                }
+                j++;
+
+                queues[queueIndex].put(line);
+                line = reader.readLine();
+            }
+
+            reader.close();
+
+            for (int i = 0; i < nThreads; i++)
+                queues[i].put("===");
+
+        }  catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        System.out.println("Finished");
+
+        executorService.shutdown();
+
+        System.out.println("Shut down");
+    }
+
     private static void processWithBufferedReader() {
         BufferedReader reader;
 
@@ -280,7 +346,6 @@ public class CalculateAverage_albertoventurini {
         MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, chunkLength);
 
         while (true) {
-
             if (index >= chunkLength) {
 
                 if ((position + chunkLength) > fileSize) {
@@ -298,7 +363,6 @@ public class CalculateAverage_albertoventurini {
             if (b != '\n') {
                 bytes[i++] = b;
             } else {
-//                System.out.println(sb.toString());
                 processRowByteArray(bytes, i);
                 i = 0;
             }
@@ -309,7 +373,7 @@ public class CalculateAverage_albertoventurini {
 
         System.out.println("Processing...");
 
-        processWithMemoryMapped();
+        processWithMultiThread();
 
         System.out.println("Printing...");
         printResults();
