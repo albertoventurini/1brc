@@ -16,10 +16,7 @@
 package dev.morling.onebrc;
 
 import javax.swing.tree.TreeNode;
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
-import java.io.RandomAccessFile;
+import java.io.*;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
@@ -62,6 +59,85 @@ public class CalculateAverage_albertoventurini {
         node.min = Math.min(node.min, value);
         node.max = Math.max(node.max, value);
         node.sum += value;
+        node.count++;
+    }
+
+    private static void processRow2(final String row) {
+        byte[] bytes = row.getBytes();
+
+        TrieNode node = root;
+        int i = 0;
+        while (bytes[i] != ';') {
+            final int b = bytes[i] & 0xFF;
+            if (node.children[b] == null) {
+                node.children[b] = new TrieNode();
+            }
+            node = node.children[b];
+            i++;
+        }
+
+        i++;
+
+        double reading = 0.0;
+        boolean parsingDecimal = false;
+        while (i < row.length()) {
+            if (bytes[i] == '.') {
+                parsingDecimal = true;
+                i++;
+                continue;
+            }
+
+            if (parsingDecimal) {
+                // todo
+            }
+            else {
+                reading = reading * 10 + (bytes[i] - '0');
+            }
+
+            i++;
+        }
+
+        node.min = Math.min(node.min, reading);
+        node.max = Math.max(node.max, reading);
+        node.sum += reading;
+        node.count++;
+    }
+
+    private static void processRow(final ChunkReader cr) {
+        TrieNode node = root;
+
+        while (cr.peekNext() != ';') {
+            final int b = cr.getNext() & 0xFF;
+            if (node.children[b] == null) {
+                node.children[b] = new TrieNode();
+            }
+            node = node.children[b];
+        }
+
+        cr.getNext();
+        double reading = 0.0;
+        boolean parsingDecimal = false;
+        while (cr.peekNext() != '\n') {
+            char c = cr.getNext();
+            if (c == '.') {
+                parsingDecimal = true;
+                cr.getNext();
+                continue;
+            }
+
+            if (parsingDecimal) {
+                // todo
+            }
+            else {
+                reading = reading * 10 + (c - '0');
+            }
+        }
+
+        cr.getNext();
+
+        node.min = Math.min(node.min, reading);
+        node.max = Math.max(node.max, reading);
+        node.sum += reading;
         node.count++;
     }
 
@@ -111,6 +187,49 @@ public class CalculateAverage_albertoventurini {
         private long count;
     }
 
+    private static class ChunkReader {
+        char[] chunk = new char[10_000_000];
+
+        Reader reader;
+
+        int readChars;
+
+        int cursor = 0;
+
+        public ChunkReader(Reader reader) {
+            this.reader = reader;
+            readNextChunk();
+        }
+
+        boolean hasNext() {
+            return readChars != -1;
+        }
+
+        char getNext() {
+            if (cursor >= readChars) {
+                readNextChunk();
+            }
+            return chunk[cursor++];
+        }
+
+        char peekNext() {
+            if (cursor >= readChars) {
+                readNextChunk();
+            }
+            return chunk[cursor];
+        }
+
+        private void readNextChunk() {
+            try {
+                readChars = reader.read(chunk);
+            }
+            catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+            cursor = 0;
+        }
+    }
+
     public static void main(String[] args) throws IOException {
         // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
         // .map(l -> l.split(";"))
@@ -121,25 +240,40 @@ public class CalculateAverage_albertoventurini {
         // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
         // System.out.println(measurements1);
 
-//        RandomAccessFile memoryMappedFile = new RandomAccessFile(FILE, "r");
-//        try (FileChannel channel = FileChannel.open(Path.of(FILE))) {
-//            int length = (int) channel.size();
-//            MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, length);
-//        }
-
-
+        // RandomAccessFile memoryMappedFile = new RandomAccessFile(FILE, "r");
+        // try (FileChannel channel = FileChannel.open(Path.of(FILE))) {
+        // long length = channel.size();
+        // MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, length);
+        //
+        // for (int i = 0; i < length; i++) {
+        // buffer.get();
+        // }
+        //
+        // }
 
         System.out.println("Processing...");
         BufferedReader reader;
 
         try {
-            reader = new BufferedReader(new FileReader(FILE));
+            reader = new BufferedReader(new FileReader(FILE), 8192 * 10);
             String line = reader.readLine();
 
             while (line != null) {
-                processRow(line);
+                processRow2(line);
                 line = reader.readLine();
             }
+
+            // char[] dest = new char[10_000_000];
+            //
+            // int c = reader.read(dest);
+            // while (c != -1) {
+            // c = reader.read(dest);
+            // }
+
+            // ChunkReader cr = new ChunkReader(reader);
+            // while (cr.hasNext()) {
+            // processRow(cr);
+            // }
 
             reader.close();
         }
