@@ -15,19 +15,14 @@
  */
 package dev.morling.onebrc;
 
-import javax.swing.tree.TreeNode;
 import java.io.*;
+import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.TreeMap;
-import java.util.stream.Collector;
 
 import static java.lang.Math.round;
-import static java.util.stream.Collectors.groupingBy;
 
 public class CalculateAverage_albertoventurini {
 
@@ -80,6 +75,7 @@ public class CalculateAverage_albertoventurini {
 
         double reading = 0.0;
         boolean parsingDecimal = false;
+        int decimalDigits = 0;
         while (i < row.length()) {
             if (bytes[i] == '.') {
                 parsingDecimal = true;
@@ -88,14 +84,57 @@ public class CalculateAverage_albertoventurini {
             }
 
             if (parsingDecimal) {
-                // todo
+                decimalDigits++;
             }
-            else {
-                reading = reading * 10 + (bytes[i] - '0');
-            }
+
+            reading = reading * 10 + (bytes[i] - '0');
 
             i++;
         }
+
+        reading = reading / (double) decimalDigits;
+
+        node.min = Math.min(node.min, reading);
+        node.max = Math.max(node.max, reading);
+        node.sum += reading;
+        node.count++;
+    }
+
+    private static void processRowByteArray(final byte[] bytes, final int length) {
+
+        TrieNode node = root;
+        int i = 0;
+        while (bytes[i] != ';') {
+            final int b = bytes[i] & 0xFF;
+            if (node.children[b] == null) {
+                node.children[b] = new TrieNode();
+            }
+            node = node.children[b];
+            i++;
+        }
+
+        i++;
+
+        double reading = 0.0;
+        boolean parsingDecimal = false;
+        int decimalDigits = 0;
+        while (i < length) {
+            if (bytes[i] == '.') {
+                parsingDecimal = true;
+                i++;
+                continue;
+            }
+
+            if (parsingDecimal) {
+                decimalDigits++;
+            }
+
+            reading = reading * 10 + (bytes[i] - '0');
+
+            i++;
+        }
+
+        reading = reading / (double) decimalDigits;
 
         node.min = Math.min(node.min, reading);
         node.max = Math.max(node.max, reading);
@@ -117,6 +156,7 @@ public class CalculateAverage_albertoventurini {
         cr.getNext();
         double reading = 0.0;
         boolean parsingDecimal = false;
+        int decimalDigits = 0;
         while (cr.peekNext() != '\n') {
             char c = cr.getNext();
             if (c == '.') {
@@ -163,30 +203,6 @@ public class CalculateAverage_albertoventurini {
 
     private static final String FILE = "./measurements.txt";
 
-    private static record Measurement(String station, double value) {
-        private Measurement(String[] parts) {
-            this(parts[0], Double.parseDouble(parts[1]));
-        }
-    }
-
-    private static record ResultRow(double min, double mean, double max) {
-
-        public String toString() {
-            return round(min) + "/" + round(mean) + "/" + round(max);
-        }
-
-        private double round(double value) {
-            return Math.round(value * 10.0) / 10.0;
-        }
-    };
-
-    private static class MeasurementAggregator {
-        private double min = Double.POSITIVE_INFINITY;
-        private double max = Double.NEGATIVE_INFINITY;
-        private double sum;
-        private long count;
-    }
-
     private static class ChunkReader {
         char[] chunk = new char[10_000_000];
 
@@ -230,32 +246,11 @@ public class CalculateAverage_albertoventurini {
         }
     }
 
-    public static void main(String[] args) throws IOException {
-        // Map<String, Double> measurements1 = Files.lines(Paths.get(FILE))
-        // .map(l -> l.split(";"))
-        // .collect(groupingBy(m -> m[0], averagingDouble(m -> Double.parseDouble(m[1]))));
-        //
-        // measurements1 = new TreeMap<>(measurements1.entrySet()
-        // .stream()
-        // .collect(toMap(e -> e.getKey(), e -> Math.round(e.getValue() * 10.0) / 10.0)));
-        // System.out.println(measurements1);
-
-        // RandomAccessFile memoryMappedFile = new RandomAccessFile(FILE, "r");
-        // try (FileChannel channel = FileChannel.open(Path.of(FILE))) {
-        // long length = channel.size();
-        // MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, 0, length);
-        //
-        // for (int i = 0; i < length; i++) {
-        // buffer.get();
-        // }
-        //
-        // }
-
-        System.out.println("Processing...");
+    private static void processWithBufferedReader() {
         BufferedReader reader;
 
         try {
-            reader = new BufferedReader(new FileReader(FILE), 8192 * 10);
+            reader = new BufferedReader(new FileReader(FILE));
             String line = reader.readLine();
 
             while (line != null) {
@@ -263,52 +258,61 @@ public class CalculateAverage_albertoventurini {
                 line = reader.readLine();
             }
 
-            // char[] dest = new char[10_000_000];
-            //
-            // int c = reader.read(dest);
-            // while (c != -1) {
-            // c = reader.read(dest);
-            // }
-
-            // ChunkReader cr = new ChunkReader(reader);
-            // while (cr.hasNext()) {
-            // processRow(cr);
-            // }
-
             reader.close();
         }
         catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    private static void processWithMemoryMapped() throws Exception {
+        FileChannel channel = FileChannel.open(Path.of(FILE));
+
+        long chunkLength = Integer.MAX_VALUE;
+        long fileSize = channel.size();
+        long position = 0;
+
+        long index = 0;
+
+        byte[] bytes = new byte[200];
+        int i = 0;
+
+        MappedByteBuffer buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, chunkLength);
+
+        while (true) {
+
+            if (index >= chunkLength) {
+
+                if ((position + chunkLength) > fileSize) {
+                    break;
+                }
+
+                buffer = channel.map(FileChannel.MapMode.READ_ONLY, position, chunkLength);
+                position += chunkLength;
+                index = 0;
+            }
+
+            byte b = buffer.get();
+            index++;
+
+            if (b != '\n') {
+                bytes[i++] = b;
+            } else {
+//                System.out.println(sb.toString());
+                processRowByteArray(bytes, i);
+                i = 0;
+            }
+        }
+    }
+
+    public static void main(String[] args) throws Exception {
+
+        System.out.println("Processing...");
+
+        processWithMemoryMapped();
 
         System.out.println("Printing...");
         printResults();
 
-        // Collector<Measurement, MeasurementAggregator, ResultRow> collector = Collector.of(
-        // MeasurementAggregator::new,
-        // (a, m) -> {
-        // a.min = Math.min(a.min, m.value);
-        // a.max = Math.max(a.max, m.value);
-        // a.sum += m.value;
-        // a.count++;
-        // },
-        // (agg1, agg2) -> {
-        // var res = new MeasurementAggregator();
-        // res.min = Math.min(agg1.min, agg2.min);
-        // res.max = Math.max(agg1.max, agg2.max);
-        // res.sum = agg1.sum + agg2.sum;
-        // res.count = agg1.count + agg2.count;
-        //
-        // return res;
-        // },
-        // agg -> {
-        // return new ResultRow(agg.min, (round(agg.sum * 10.0) / 10.0) / agg.count, agg.max);
-        // });
-        //
-        // Map<String, ResultRow> measurements = new TreeMap<>(Files.lines(Paths.get(FILE))
-        // .map(l -> new Measurement(l.split(";")))
-        // .collect(groupingBy(m -> m.station(), collector)));
-        //
-        // System.out.println(measurements);
     }
 }
