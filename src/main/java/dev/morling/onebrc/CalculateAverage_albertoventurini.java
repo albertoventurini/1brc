@@ -16,6 +16,7 @@
 package dev.morling.onebrc;
 
 import java.io.*;
+import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.MappedByteBuffer;
 import java.nio.channels.FileChannel;
@@ -159,8 +160,8 @@ public class CalculateAverage_albertoventurini {
         double reading = 0.0;
         boolean parsingDecimal = false;
         int decimalDigits = 0;
-        while (cr.peekNext() != '\n') {
-            char c = cr.getNext();
+        while (cr.hasNext() && cr.peekNext() != '\n') {
+            byte c = cr.getNext();
             if (c == '.') {
                 parsingDecimal = true;
                 cr.getNext();
@@ -175,7 +176,9 @@ public class CalculateAverage_albertoventurini {
             }
         }
 
-        cr.getNext();
+        if (cr.hasNext()) {
+            cr.getNext();
+        }
 
         node.min = Math.min(node.min, reading);
         node.max = Math.max(node.max, reading);
@@ -206,31 +209,38 @@ public class CalculateAverage_albertoventurini {
     private static final String FILE = "./measurements.txt";
 
     private static class ChunkReader {
-        char[] chunk = new char[10_000_000];
+        int len = 10_000_000;
+        byte[] chunk = new byte[len];
 
-        Reader reader;
+        RandomAccessFile file;
 
         int readChars;
 
         int cursor = 0;
+        long off = 0;
 
-        public ChunkReader(Reader reader) {
-            this.reader = reader;
+
+        long fileLength;
+
+
+        public ChunkReader(RandomAccessFile file) throws IOException {
+            this.file = file;
+            this.fileLength = file.length();
             readNextChunk();
         }
 
         boolean hasNext() {
-            return readChars != -1;
+            return (off + cursor) < fileLength;
         }
 
-        char getNext() {
+        byte getNext() {
             if (cursor >= readChars) {
                 readNextChunk();
             }
             return chunk[cursor++];
         }
 
-        char peekNext() {
+        byte peekNext() {
             if (cursor >= readChars) {
                 readNextChunk();
             }
@@ -239,12 +249,14 @@ public class CalculateAverage_albertoventurini {
 
         private void readNextChunk() {
             try {
-                readChars = reader.read(chunk);
+                file.seek(off);
+                readChars = file.read(chunk);
+                off += readChars;
+                cursor = 0;
             }
             catch (IOException e) {
                 throw new RuntimeException(e);
             }
-            cursor = 0;
         }
     }
 
@@ -331,6 +343,22 @@ public class CalculateAverage_albertoventurini {
         }
     }
 
+    private static void processWithChunkReader() throws Exception {
+        var randomAccessFile = new RandomAccessFile(FILE, "r");
+
+        try {
+            var chunkReader = new ChunkReader(randomAccessFile);
+
+            while (chunkReader.hasNext()) {
+                processRow(chunkReader);
+            }
+            randomAccessFile.close();
+        }
+        catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     private static void processWithMemoryMapped() throws Exception {
         FileChannel channel = FileChannel.open(Path.of(FILE));
 
@@ -373,7 +401,7 @@ public class CalculateAverage_albertoventurini {
 
         System.out.println("Processing...");
 
-        processWithMultiThread();
+        processWithChunkReader();
 
         System.out.println("Printing...");
         printResults();
