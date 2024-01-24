@@ -24,50 +24,64 @@ import java.util.concurrent.Executors;
 
 public class CalculateAverage_albertoventurini {
 
+    // Define a prefix tree that is used to store results.
+    // Each node in the trie represents a byte (NOT character) from a location name.
+    // A nice side effect is, when traversing the trie to print results,
+    // the names will be printed in alphabetical order.
     private static final class TrieNode {
         final TrieNode[] children = new TrieNode[256];
-        private long min = Long.MAX_VALUE;
-        private long max = Long.MIN_VALUE;
-        private long sum;
-        private long count;
+        long min = Long.MAX_VALUE;
+        long max = Long.MIN_VALUE;
+        long sum;
+        long count;
     }
 
-    private static void processRow(final TrieNode root, final ChunkReader cr) {
-        TrieNode node = root;
+    // Process a chunk and write results in a Trie rooted at 'root'.
+    private static void processChunk(final TrieNode root, final ChunkReader cr) {
+        while (cr.hasNext()) {
+            TrieNode node = root;
 
-        int b = cr.getNext() & 0xFF;
-        while (b != ';') {
-            if (node.children[b] == null) {
-                node.children[b] = new TrieNode();
+            // Process the location name navigating through the trie
+            int b = cr.getNext() & 0xFF;
+            while (b != ';') {
+                if (node.children[b] == null) {
+                    node.children[b] = new TrieNode();
+                }
+                node = node.children[b];
+                b = cr.getNext() & 0xFF;
             }
-            node = node.children[b];
-            b = cr.getNext() & 0xFF;
-        }
 
-        long reading = 0;
-        boolean negative = false;
-        while (true) {
-            byte c = cr.getNext();
-            if (c == '\n') {
-                break;
-            } else if (c == '-') {
-                negative = true;
-                continue;
-            } else if (c == '.') {
-                continue;
+            // Process the reading value (temperature)
+            long reading = 0;
+            boolean negative = false;
+            while (true) {
+                byte c = cr.getNext();
+                if (c == '\n') {
+                    break;
+                } else if (c == '-') {
+                    negative = true;
+                    continue;
+                } else if (c == '.') {
+                    continue;
+                }
+                reading = reading * 10 + (c - '0');
             }
-            reading = reading * 10 + (c - '0');
+
+            final long signedReading = negative ? -reading : reading;
+
+            node.min = Math.min(node.min, signedReading);
+            node.max = Math.max(node.max, signedReading);
+            node.sum += signedReading;
+            node.count++;
         }
-
-        final long signedReading = negative ? -reading : reading;
-
-        node.min = Math.min(node.min, signedReading);
-        node.max = Math.max(node.max, signedReading);
-        node.sum += signedReading;
-        node.count++;
     }
 
+    // Print results.
+    // Because there are multiple tries (one for each thread), this method
+    // aggregates results from all tries.
     static class ResultPrinter {
+        // Contains the bytes for the current location name. 100 bytes should be enough
+        // to represent all location names encoded in UTF-8.
         final byte[] bytes = new byte[100];
 
         boolean firstOutput = true;
@@ -82,14 +96,14 @@ public class CalculateAverage_albertoventurini {
             return Math.round(value) / 10.0;
         }
 
+        // Find and print results recursively.
         private void printResultsRec(final TrieNode[] nodes, final byte[] bytes, final int index) {
-
             long min = Long.MAX_VALUE;
             long max = Long.MIN_VALUE;
             long sum = 0;
             long count = 0;
 
-            for (TrieNode node : nodes) {
+            for (final TrieNode node : nodes) {
                 if (node != null && node.count > 0) {
                     min = Math.min(min, node.min);
                     max = Math.max(max, node.max);
@@ -115,6 +129,8 @@ public class CalculateAverage_albertoventurini {
                 for (int j = 0; j < nodes.length; j++) {
                     if (nodes[j] != null && nodes[j].children[i] != null) {
                         childNodes[j] = nodes[j].children[i];
+
+                        // Only recurse if there's at least one trie that has non-null child for index 'i'.
                         shouldRecurse = true;
                     }
                 }
@@ -130,6 +146,7 @@ public class CalculateAverage_albertoventurini {
     private static final String FILE = "./measurements.txt";
 
     private static final class ChunkReader {
+        // Byte arrays of size 2^22 seem to have the best performance on my machine.
         private static final int BYTE_ARRAY_SIZE = 1 << 22;
         private final byte[] bytes;
 
@@ -214,10 +231,10 @@ public class CalculateAverage_albertoventurini {
         return chunkReaders;
     }
 
-    private static void processWithChunkReader() throws Exception {
+    private static void processWithChunkReaders() throws Exception {
         final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
-        int nThreads = Runtime.getRuntime().availableProcessors() - 1;
+        final int nThreads = Runtime.getRuntime().availableProcessors() - 1;
 
         final CountDownLatch latch = new CountDownLatch(nThreads);
 
@@ -231,9 +248,7 @@ public class CalculateAverage_albertoventurini {
         for (int i = 0; i < nThreads; i++) {
             final int idx = i;
             executorService.submit(() -> {
-                while (chunkReaders[idx].hasNext()) {
-                    processRow(roots[idx], chunkReaders[idx]);
-                }
+                processChunk(roots[idx], chunkReaders[idx]);
                 latch.countDown();
             });
         }
@@ -248,7 +263,7 @@ public class CalculateAverage_albertoventurini {
 
     public static void main(String[] args) throws Exception {
 
-        processWithChunkReader();
+        processWithChunkReaders();
 
     }
 }
