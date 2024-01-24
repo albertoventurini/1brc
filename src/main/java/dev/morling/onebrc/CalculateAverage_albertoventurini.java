@@ -135,7 +135,7 @@ public class CalculateAverage_albertoventurini {
     private static final String FILE = "./measurements.txt";
 
     private static class ChunkReader {
-        private static final int BYTE_ARRAY_SIZE = 1048576;
+        private static final int BYTE_ARRAY_SIZE = 1 << 22;
         private final byte[] bytes;
 
         private final RandomAccessFile file;
