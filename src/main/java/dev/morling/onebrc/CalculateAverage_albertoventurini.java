@@ -231,10 +231,6 @@ public class CalculateAverage_albertoventurini {
             long chunkLength = currentPosition - previousPosition;
             chunkReaders[i] = new ChunkReader(file, chunkBegin, chunkLength);
 
-//            if (currentPosition >= file.length()) {
-//                break;
-//            }
-
             previousPosition = currentPosition;
         }
 
@@ -244,7 +240,7 @@ public class CalculateAverage_albertoventurini {
     private static void processWithChunkReader() throws Exception {
         final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
-        int nThreads = 8;
+        int nThreads = Runtime.getRuntime().availableProcessors() - 1;
 
         final CountDownLatch latch = new CountDownLatch(nThreads);
 
