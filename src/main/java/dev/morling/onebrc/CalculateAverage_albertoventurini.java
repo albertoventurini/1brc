@@ -106,10 +106,10 @@ public class CalculateAverage_albertoventurini {
     private static final String FILE = "./measurements.txt";
 
     private static class ChunkReader {
-        int len = 10_000_000;
+        int len = 1_000_000;
         byte[] chunk = new byte[len];
 
-        RandomAccessFile file;
+        final RandomAccessFile file;
 
         int readChars;
 
@@ -119,7 +119,7 @@ public class CalculateAverage_albertoventurini {
 
         long fileLength;
 
-        public ChunkReader(RandomAccessFile file) throws IOException {
+        ChunkReader(final RandomAccessFile file) throws IOException {
             this.file = file;
             this.fileLength = file.length();
             readNextChunk();
@@ -150,7 +150,6 @@ public class CalculateAverage_albertoventurini {
         private void readNextChunk() {
             try {
                 previousOff = off;
-                file.seek(off);
                 readChars = file.read(chunk);
                 off += readChars;
                 cursor = 0;
