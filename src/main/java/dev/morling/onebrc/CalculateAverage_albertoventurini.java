@@ -18,15 +18,13 @@ package dev.morling.onebrc;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class CalculateAverage_albertoventurini {
 
-    private static class TrieNode {
+    private static final class TrieNode {
         final TrieNode[] children = new TrieNode[256];
         private long min = Long.MAX_VALUE;
         private long max = Long.MIN_VALUE;
@@ -73,7 +71,7 @@ public class CalculateAverage_albertoventurini {
     }
 
     static class ResultPrinter {
-        byte[] bytes = new byte[100];
+        final byte[] bytes = new byte[100];
 
         boolean firstOutput = true;
 
@@ -134,7 +132,7 @@ public class CalculateAverage_albertoventurini {
 
     private static final String FILE = "./measurements.txt";
 
-    private static class ChunkReader {
+    private static final class ChunkReader {
         private static final int BYTE_ARRAY_SIZE = 1 << 22;
         private final byte[] bytes;
 
@@ -172,17 +170,6 @@ public class CalculateAverage_albertoventurini {
             return bytes[cursor++];
         }
 
-        void advance() {
-            cursor++;
-        }
-
-        byte peekNext() {
-            if (cursor >= readBytes) {
-                readNextBytes();
-            }
-            return bytes[cursor];
-        }
-
         private void readNextBytes() {
             try {
                 offset += readBytes;
@@ -194,14 +181,6 @@ public class CalculateAverage_albertoventurini {
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
-        }
-
-        String bytesAsString() {
-            StringBuilder sb = new StringBuilder();
-            for (byte b : bytes) {
-                sb.append((char) b);
-            }
-            return sb.toString();
         }
     }
 
