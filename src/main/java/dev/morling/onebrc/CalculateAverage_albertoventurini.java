@@ -46,17 +46,14 @@ public class CalculateAverage_albertoventurini {
 
         long reading = 0;
         boolean negative = false;
-        // while (cr.hasNext()) {
-        while (true) { // TODO replace with true?
+        while (true) {
             byte c = cr.getNext();
             if (c == '\n') {
                 break;
-            }
-            if (c == '-') {
+            } else if (c == '-') {
                 negative = true;
                 continue;
-            }
-            if (c == '.') {
+            } else if (c == '.') {
                 continue;
             }
             reading = reading * 10 + (c - '0');
