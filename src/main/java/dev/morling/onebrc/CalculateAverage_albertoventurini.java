@@ -15,8 +15,14 @@
  */
 package dev.morling.onebrc;
 
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class CalculateAverage_albertoventurini {
 
@@ -28,9 +34,7 @@ public class CalculateAverage_albertoventurini {
         private long count;
     }
 
-    private static final TrieNode root = new TrieNode();
-
-    private static void processRow(final ChunkReader cr) {
+    private static void processRow(final TrieNode root, final ChunkReader cr) {
         TrieNode node = root;
 
         int b = cr.getNext() & 0xFF;
@@ -44,7 +48,7 @@ public class CalculateAverage_albertoventurini {
 
         long reading = 0;
         boolean negative = false;
-        while (true) {
+        while (cr.hasNext()) { // TODO replace with true?
             byte c = cr.getNext();
             if (c == '\n') {
                 break;
@@ -72,9 +76,9 @@ public class CalculateAverage_albertoventurini {
 
         boolean firstOutput = true;
 
-        void printResults() {
+        void printResults(final TrieNode[] roots) {
             System.out.print("{");
-            printResultsRec(root, bytes, 0);
+            printResultsRec(roots, bytes, 0);
             System.out.println("}");
         }
 
@@ -82,23 +86,47 @@ public class CalculateAverage_albertoventurini {
             return Math.round(value) / 10.0;
         }
 
-        private void printResultsRec(final TrieNode node, final byte[] bytes, final int index) {
-            if (node.count > 0) {
+        private void printResultsRec(final TrieNode[] nodes, final byte[] bytes, final int index) {
+
+            long min = Long.MAX_VALUE;
+            long max = Long.MIN_VALUE;
+            long sum = 0;
+            long count = 0;
+
+            for (TrieNode node : nodes) {
+                if (node != null && node.count > 0) {
+                    min = Math.min(min, node.min);
+                    max = Math.max(max, node.max);
+                    sum += node.sum;
+                    count += node.count;
+                }
+            }
+
+            if (count > 0) {
                 final String location = new String(bytes, 0, index);
                 if (firstOutput) {
                     firstOutput = false;
                 } else {
                     System.out.print(", ");
                 }
-                double mean = Math.round((double) node.sum / (double) node.count) / 10.0;
-                System.out.print(location + "=" + round(node.min) + "/" + mean + "/" + round(node.max));
+                double mean = Math.round((double) sum / (double) count) / 10.0;
+                System.out.print(location + "=" + round(min) + "/" + mean + "/" + round(max));
             }
 
             for (int i = 0; i < 256; i++) {
-                if (node.children[i] != null) {
-                    bytes[index] = (byte) i;
-                    printResultsRec(node.children[i], bytes, index + 1);
+                final TrieNode[] childNodes = new TrieNode[nodes.length];
+                boolean shouldRecurse = false;
+                for (int j = 0; j < nodes.length; j++) {
+                    if (nodes[j] != null && nodes[j].children[i] != null) {
+                        childNodes[j] = nodes[j].children[i];
+                        shouldRecurse = true;
+                    }
                 }
+                if (shouldRecurse) {
+                    bytes[index] = (byte) i;
+                    printResultsRec(childNodes, bytes, index + 1);
+                }
+
             }
         }
     }
@@ -106,34 +134,41 @@ public class CalculateAverage_albertoventurini {
     private static final String FILE = "./measurements.txt";
 
     private static class ChunkReader {
-        int len = 1_000_000;
-        byte[] chunk = new byte[len];
+        private static final int BYTE_ARRAY_SIZE = 10_000_000;
+        private final byte[] bytes;
 
-        final RandomAccessFile file;
+        private final RandomAccessFile file;
+        private final long chunkBegin;
+        private final long chunkLength;
 
-        int readChars;
+        private int readBytes = 0;
 
-        int cursor = 0;
-        long off = 0;
-        long previousOff = 0;
+        private int cursor = 0;
+        private long offset = 0;
 
-        long fileLength;
-
-        ChunkReader(final RandomAccessFile file) throws IOException {
+        ChunkReader(
+                final RandomAccessFile file,
+                final long chunkBegin,
+                final long chunkLength) {
             this.file = file;
-            this.fileLength = file.length();
-            readNextChunk();
+            this.chunkBegin = chunkBegin;
+            this.chunkLength = chunkLength;
+
+            int byteArraySize = chunkLength < BYTE_ARRAY_SIZE ? (int) chunkLength : BYTE_ARRAY_SIZE;
+            this.bytes = new byte[byteArraySize];
+
+            readNextBytes();
         }
 
         boolean hasNext() {
-            return (previousOff + cursor) < fileLength;
+            return (offset + cursor) < chunkLength;
         }
 
         byte getNext() {
-            if (cursor >= readChars) {
-                readNextChunk();
+            if (cursor >= readBytes) {
+                readNextBytes();
             }
-            return chunk[cursor++];
+            return bytes[cursor++];
         }
 
         void advance() {
@@ -141,52 +176,106 @@ public class CalculateAverage_albertoventurini {
         }
 
         byte peekNext() {
-            if (cursor >= readChars) {
-                readNextChunk();
+            if (cursor >= readBytes) {
+                readNextBytes();
             }
-            return chunk[cursor];
+            return bytes[cursor];
         }
 
-        private void readNextChunk() {
+        private void readNextBytes() {
             try {
-                previousOff = off;
-                readChars = file.read(chunk);
-                off += readChars;
+                offset += readBytes;
+                synchronized (file) {
+                    file.seek(chunkBegin + offset);
+                    readBytes = file.read(bytes);
+                }
                 cursor = 0;
-            }
-            catch (IOException e) {
+            } catch (IOException e) {
                 throw new RuntimeException(e);
             }
         }
+
+        String bytesAsString() {
+            StringBuilder sb = new StringBuilder();
+            for (byte b : bytes) {
+                sb.append((char) b);
+            }
+            return sb.toString();
+        }
+    }
+
+    private static ChunkReader[] makeChunkReaders(
+            final int count,
+            final RandomAccessFile file) throws Exception {
+
+        final ChunkReader[] chunkReaders = new ChunkReader[count];
+
+        // The total size of each chunk
+        final long chunkReaderSize = file.length() / count;
+
+        long previousPosition = 0;
+        long currentPosition;
+
+        for (int i = 0; i < count; i++) {
+            // Go to the end of the chunk
+            file.seek(chunkReaderSize * (i + 1));
+
+            // Align to the next end of line or end of file
+            try {
+                while (file.readByte() != '\n');
+            } catch (EOFException e) {
+            }
+
+            currentPosition = file.getFilePointer();
+            long chunkBegin = previousPosition;
+            long chunkLength = currentPosition - previousPosition;
+            chunkReaders[i] = new ChunkReader(file, chunkBegin, chunkLength);
+
+//            if (currentPosition >= file.length()) {
+//                break;
+//            }
+
+            previousPosition = currentPosition;
+        }
+
+        return chunkReaders;
     }
 
     private static void processWithChunkReader() throws Exception {
-        var randomAccessFile = new RandomAccessFile(FILE, "r");
+        final var randomAccessFile = new RandomAccessFile(FILE, "r");
 
-        try {
-            var chunkReader = new ChunkReader(randomAccessFile);
+        int nThreads = 8;
 
-            while (chunkReader.hasNext()) {
-                processRow(chunkReader);
-            }
-            randomAccessFile.close();
+        final CountDownLatch latch = new CountDownLatch(nThreads);
+
+        final ChunkReader[] chunkReaders = makeChunkReaders(nThreads, randomAccessFile);
+        final TrieNode[] roots = new TrieNode[nThreads];
+        for (int i = 0; i < nThreads; i++) {
+            roots[i] = new TrieNode();
         }
-        catch (IOException e) {
-            e.printStackTrace();
+
+        final ExecutorService executorService = Executors.newFixedThreadPool(nThreads);
+        for (int i = 0; i < nThreads; i++) {
+            final int idx = i;
+            executorService.submit(() -> {
+                while (chunkReaders[idx].hasNext()) {
+                    processRow(roots[idx], chunkReaders[idx]);
+                }
+                latch.countDown();
+            });
         }
+        executorService.shutdown();
+        latch.await();
+
+        new ResultPrinter().printResults(roots);
+
+        executorService.close();
     }
 
 
     public static void main(String[] args) throws Exception {
 
-//        System.out.println("Processing...");
-
         processWithChunkReader();
-
-  //      System.out.println("Printing...");
-
-        new ResultPrinter().printResults();
-        //printResults();
 
     }
 }
