@@ -59,6 +59,7 @@ public class CalculateAverage_albertoventurini {
     // Process a chunk and write results in a Trie rooted at 'root'.
     private static void processChunk(final TrieNode root, final ChunkReader cr) {
         while (cr.hasNext()) {
+            cr.ensureLoadNext();
             TrieNode node = root;
 
             // Process the location name navigating through the trie
@@ -186,6 +187,8 @@ public class CalculateAverage_albertoventurini {
         private int cursor = 0;
         private long offset = 0;
 
+        private static final int OVERHEAD = 100;
+
         ChunkReader(
                     final RandomAccessFile file,
                     final long chunkBegin,
@@ -200,20 +203,24 @@ public class CalculateAverage_albertoventurini {
             readNextBytes();
         }
 
+        // Return true if this ChunkReader has more bytes available
         boolean hasNext() {
             return (offset + cursor) < chunkLength;
         }
 
-        byte getNext() {
-            if (cursor >= readBytes) {
+        void ensureLoadNext() {
+            if ((cursor + OVERHEAD) >= readBytes) {
+                offset += cursor;
                 readNextBytes();
             }
+        }
+
+        byte getNext() {
             return bytes[cursor++];
         }
 
         private void readNextBytes() {
             try {
-                offset += readBytes;
                 synchronized (file) {
                     file.seek(chunkBegin + offset);
                     readBytes = file.read(bytes);
