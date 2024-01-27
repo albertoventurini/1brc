@@ -93,7 +93,7 @@ public class CalculateAverage_albertoventurini {
                 else { // value is nn.n
                     reading = (b1 * 100 + b2 * 10 + b4 - THREE_BYTE_TO_INT);
                 }
-                cr.getNext(); // new line
+                cr.cursor++; // new line
             }
 
             node.min = Math.min(node.min, reading);
