@@ -63,13 +63,14 @@ public class CalculateAverage_albertoventurini {
             TrieNode node = root;
 
             // Process the location name navigating through the trie
-            int b = cr.getNext() & 0xFF;
+            int b = cr.getNext();
             do {
+                b &= 0xFF;
                 if (node.children[b] == null) {
                     node.children[b] = new TrieNode();
                 }
                 node = node.children[b];
-                b = cr.getNext() & 0xFF;
+                b = cr.getNext();
             } while (b != ';');
 
             // Process the reading value (temperature)
