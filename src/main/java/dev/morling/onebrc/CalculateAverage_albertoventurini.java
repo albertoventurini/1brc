@@ -77,13 +77,12 @@ public class CalculateAverage_albertoventurini {
 
             byte b1 = cr.getNext();
             byte b2 = cr.getNext();
-            byte b3 = cr.getNext();
-            byte b4 = cr.getNext();
             if (b2 == '.') { // value is n.n
-                reading = (b1 * 10 + b3 - TWO_BYTE_TO_INT);
-                // b4 == \n
+                reading = (b1 * 10 + cr.getNext() - TWO_BYTE_TO_INT);
             }
             else {
+                byte b3 = cr.getNext();
+                byte b4 = cr.getNext();
                 if (b4 == '.') { // value is -nn.n
                     reading = -(b2 * 100 + b3 * 10 + cr.getNext() - THREE_BYTE_TO_INT);
                 }
@@ -93,8 +92,8 @@ public class CalculateAverage_albertoventurini {
                 else { // value is nn.n
                     reading = (b1 * 100 + b2 * 10 + b4 - THREE_BYTE_TO_INT);
                 }
-                cr.cursor++; // new line
             }
+            cr.cursor++; // new line
 
             node.min = Math.min(node.min, reading);
             node.max = Math.max(node.max, reading);
