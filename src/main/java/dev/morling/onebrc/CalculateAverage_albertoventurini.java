@@ -73,16 +73,16 @@ public class CalculateAverage_albertoventurini {
             } while (b != ';');
 
             // Process the reading value (temperature)
-            int reading;
+            final int reading;
 
-            byte b1 = cr.getNext();
-            byte b2 = cr.getNext();
+            final byte b1 = cr.getNext();
+            final byte b2 = cr.getNext();
             if (b2 == '.') { // value is n.n
                 reading = (b1 * 10 + cr.getNext() - TWO_BYTE_TO_INT);
             }
             else {
-                byte b3 = cr.getNext();
-                byte b4 = cr.getNext();
+                final byte b3 = cr.getNext();
+                final byte b4 = cr.getNext();
                 if (b4 == '.') { // value is -nn.n
                     reading = -(b2 * 100 + b3 * 10 + cr.getNext() - THREE_BYTE_TO_INT);
                 }
@@ -95,8 +95,12 @@ public class CalculateAverage_albertoventurini {
             }
             cr.cursor++; // new line
 
-            node.min = Math.min(node.min, reading);
-            node.max = Math.max(node.max, reading);
+            if (reading < node.min) {
+                node.min = reading;
+            }
+            if (reading > node.max) {
+                node.max = reading;
+            }
             node.sum += reading;
             node.count++;
         }
@@ -165,7 +169,6 @@ public class CalculateAverage_albertoventurini {
                     bytes[index] = (byte) i;
                     printResultsRec(childNodes, bytes, index + 1);
                 }
-
             }
         }
     }
